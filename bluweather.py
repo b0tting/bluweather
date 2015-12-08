@@ -97,12 +97,16 @@ schedule.every().day.at(lightsout_hour).do(stop_magicblue)
 nextplanning = lightsout_time + datetime.timedelta(minutes=1)
 schedule.every().day.at(nextplanning.strftime("%H:%M")).do(schedule_magicblue_start)
 
-## Also, look at the current time and situation. If we are in "on" time, force the lamp on
-## if we are
+## Also, look at the current time and situation. If we are in "on" time, force the lamp
+## ON time is defined as: "right now we're somewhere between sundown and lights out"
 now = datetime.datetime.now(pytz.timezone(my_tz))
 lightson_time = get_lightson_time()
+
 if(lightsout_time.time() > now.time() > lightson_time.time()):
     start_magicblue()
+else:
+    ## If it's not "ON" time then schedule an ON. After the first run, the lightsout scheduler will take over.
+    schedule_magicblue_start()
 
 print(schedule.jobs)
 
