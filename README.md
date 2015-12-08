@@ -8,9 +8,11 @@ A lot of these are being sold on Chinese webstores, in a couple of different pac
 In the end, this script should be able to pull your weather information from openweathermap.org and change the color of the bulb accordingly. Also, we will use the geographic info to determine what time the sun sets and start the lamp. 
 
 # Status
-Not working yet. We change the color of the lamp based on a schedule. Turning on and off and actual weather info is not implemented yet. 
+Turning on and offis not correctly implemented yet. Also, it is not actually using the pyMagicblue library, but we'll get to that soon. 
 
 # Installation
-pip install schedule
-pip install astral
-And install the pyMagicBlue library
+- Get an api key from forecast.io. The first 1000 hits each day are free. 
+- pip install schedule
+- pip install astral
+- pip install python-forecastio
+- And install the pyMagicBlue library
