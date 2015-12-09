@@ -4,7 +4,9 @@ import astral
 from gattlib import GATTRequester
 import datetime
 import pytz
+from threading import Thread
 import forecastio
+from flask import Flask, render_template, request, redirect, url_for, send_from_directory
 
 # Your geopgraphical coordinates
 my_latt = 52.0066700
@@ -17,7 +19,7 @@ my_magicblue = "fb:6f:13:a3:c1:98"
 my_elevation = 1
 
 # API key for forecast.io
-forecast_key = ""
+forecast_key = "1bfad3ea61bc652c7e34bf56f759bdfd"
 
 # The amount of time in minutes before or after sundown  at which we should turn on the light. For example, "-60" to
 # kick the lamp into life an hour before dusk. No quotes please.
@@ -46,11 +48,22 @@ weather_mapping = {"clear-day":light_orange,"clear-night":light_orange, "rain":l
 mg_prefix = [0x56]
 mg_suffix = [0x00, 0xf0, 0xaa, 0x3b, 0x07, 0x00, 0x01]
 
+def get_forecast():
+    forecast_datetime = datetime.datetime.now(pytz.timezone(my_tz))
+    hours, minutes = forecast_time.split(':')
+    forecast_datetime = forecast_datetime + datetime.timedelta(days = 1);
+    forecast_datetime = forecast_datetime.replace(hour=int(hours), minute=int(minutes))
+    forecast = forecastio.load_forecast(forecast_key, my_latt, my_long, time=forecast_datetime)
+    weather_string = forecast.currently().icon
+    return weather_string
+
 def magicblue_color(colorstring):
     req = GATTRequester(my_magicblue, False)
     req.connect(True, "random")
     req.write_by_handle(0x000c, colorstring)
     req.disconnect()
+
+
 
 def get_lightson_time():
     myLocation = astral.Location(info=("Delft", "NL", my_latt, my_long, my_tz))
@@ -64,14 +77,7 @@ def schedule_magicblue_start():
 
 def start_magicblue():
     ## First, let's toss up a weather forecast. The hard part is creating a good time object
-    forecast_datetime = datetime.datetime.now(pytz.timezone(my_tz))
-    hours, minutes = forecast_time.split(':')
-    forecast_datetime = forecast_datetime + datetime.timedelta(days = 1);
-    forecast_datetime = forecast_datetime.replace(hour=int(hours), minute=int(minutes))
-    print(str(forecast_datetime))
-    forecast = forecastio.load_forecast(forecast_key, my_latt, my_long, time=forecast_datetime)
-    weather_string = forecast.currently().icon
-    print(weather_string)
+    weather_string = get_forecast()
     colorstring = []
     colorstring.extend(mg_prefix)
     colorstring.extend(weather_mapping[weather_string])
@@ -86,6 +92,30 @@ def stop_magicblue():
     colorstring.extend(night)
     colorstring.extend(mg_suffix)
     magicblue_color(colorstring)
+
+app = Flask(__name__)
+@app.route('/')
+def queued_jobs():
+        jobs = schedule.jobs
+        start_time = None
+        stop_time = None
+
+        for job in jobs:
+                func_name = job.job_func.func.__name__
+                if(func_name == "start_magicblue"):
+                        start_time = job.next_run
+                if(func_name == "stop_magicblue"):
+                        stop_time = job.next_run
+
+        sundown = start_time - datetime.timedelta(minutes = minutes_before_sundown)
+        forecast = get_forecast()
+        return render_template('index.html', start_time=start_time, stop_time = stop_time, sundown = sundown, forecast = forecast)
+
+
+def throw_webserver():
+    while True:
+        schedule.run_pending()
+    time.sleep(10)
 
 ## Plan lights out every day at the set time
 lightsout_time_struct = list((time.strptime(lightsout_hour, "%H:%M"))[:7])
@@ -110,6 +140,11 @@ else:
 
 print(schedule.jobs)
 
-while True:
-    schedule.run_pending()
-    time.sleep(10)
+
+
+thread = Thread(target = throw_webserver)
+thread.daemon=True
+thread.start()
+
+app.debug = True
+app.run(host='0.0.0.0', port=80)
