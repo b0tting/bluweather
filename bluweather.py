@@ -6,7 +6,7 @@ import datetime
 import pytz
 from threading import Thread
 import forecastio
-from flask import Flask, render_template
+from flask import Flask, render_template, redirect, url_for
 
 # Your geopgraphical coordinates
 my_latt = 52.0066700
@@ -67,10 +67,11 @@ def get_forecast():
 def magicblue_color(colorstring):
     req = GATTRequester(my_magicblue, False)
     req.connect(True, "random")
+    time.sleep(1)
     req.write_by_handle(0x000c, colorstring)
+    time.sleep(1)
     req.disconnect()
-
-
+    time.sleep(1)
 
 def get_lightson_time():
     myLocation = astral.Location(info=("Delft", "NL", my_latt, my_long, my_tz))
@@ -92,13 +93,11 @@ def start_magicblue():
     magicblue_color(str(bytearray(colorstring)))
     return schedule.CancelJob
 
-
 def stop_magicblue():
     colorstring = []
     colorstring.extend(mg_prefix)
     colorstring.extend(night)
-    colorstring.extend(mg_suffix)
-    magicblue_color(colorstring)
+    magicblue_color(str(bytearray(colorstring)))
 
 app = Flask(__name__)
 @app.route('/')
@@ -118,11 +117,20 @@ def queued_jobs():
         forecast = get_forecast()
         return render_template('index.html', start_time=start_time, stop_time = stop_time, sundown = sundown, forecast = forecast)
 
+@app.route('/start_now')
+def start_now():
+    start_magicblue()
+    return redirect("/")
+
+@app.route('/stop_now')
+def stop_now():
+    stop_magicblue()
+    return redirect("/")
 
 def throw_webserver():
     while True:
         schedule.run_pending()
-    time.sleep(10)
+        time.sleep(10)
 
 ## Plan lights out every day at the set time
 lightsout_time_struct = list((time.strptime(lightsout_hour, "%H:%M"))[:7])
