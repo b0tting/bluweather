@@ -6,17 +6,18 @@ import datetime
 import pytz
 from threading import Thread
 import forecastio
-from flask import Flask, render_template, request, redirect, url_for, send_from_directory
+from flask import Flask, render_template
 
 # Your geopgraphical coordinates
 my_latt = 52.0066700
 my_long = 4.355560
 my_tz = "Europe/Amsterdam"
-
-# Your magicblue bluetooth MAC
-my_magicblue = "fb:6f:13:a3:c1:98"
 # Your elevation above sea level, see http://dateandtime.info
 my_elevation = 1
+
+# Your magicblue bulb bluetooth MAC
+# Get this by starting your Magicblue app and noting the MAC number. Or use HCITOOL
+my_magicblue = "fb:6f:13:a3:c1:98"
 
 # API key for forecast.io
 forecast_key = "1bfad3ea61bc652c7e34bf56f759bdfd"
@@ -37,6 +38,12 @@ light_blue = [0x00, 0x99, 0xcc]
 light_gray = [0xaa, 0xaa, 0xaa]
 light_orange = [0xff, 0xcc, 0x00]
 night = [0x00, 0x00, 0x00]
+
+## Run the webserver in debug mode?
+debug = True
+
+## And on what port?
+port = 80
 
 # A dict for mapping colors to forecast weather types
 ## Expected are clear-day, clear-night, rain, snow, sleet, wind, fog, cloudy, partly-cloudy-day, or partly-cloudy-night
@@ -146,5 +153,5 @@ thread = Thread(target = throw_webserver)
 thread.daemon=True
 thread.start()
 
-app.debug = True
-app.run(host='0.0.0.0', port=80)
+app.debug = debug
+app.run(host='0.0.0.0', port=port)
