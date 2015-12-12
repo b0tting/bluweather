@@ -11,7 +11,8 @@ from flask import Flask, render_template, redirect, url_for
 # Your geopgraphical coordinates
 my_latt = 52.0066700
 my_long = 4.355560
-my_tz = "Europe/Amsterdam"
+## Don't make the europe/amsterdam mistake!
+my_tz = "CET"
 # Your elevation above sea level, see http://dateandtime.info
 my_elevation = 1
 
@@ -20,7 +21,7 @@ my_elevation = 1
 my_magicblue = "fb:6f:13:a3:c1:98"
 
 # API key for forecast.io
-forecast_key = "1bfad3ea61bc652c7e34bf56f759bdfd"
+forecast_key = ""
 
 # The amount of time in minutes before or after sundown  at which we should turn on the light. For example, "-60" to
 # kick the lamp into life an hour before dusk. No quotes please.
@@ -39,6 +40,8 @@ light_gray = [0xaa, 0xaa, 0xaa]
 light_orange = [0xff, 0xcc, 0x00]
 night = [0x00, 0x00, 0x00]
 
+code_off = [0xcc, 0x24, 0x33]
+code_on = [0xcc, 0x23, 0x33]
 ## Run the webserver in debug mode?
 debug = True
 
@@ -49,14 +52,15 @@ port = 80
 ## Expected are clear-day, clear-night, rain, snow, sleet, wind, fog, cloudy, partly-cloudy-day, or partly-cloudy-night
 weather_mapping = {"clear-day":light_orange,"clear-night":light_orange, "rain":light_blue, "snow":light_blue,
                     "sleet":light_blue, "wind":light_gray, "fog":light_gray, "cloudy":light_gray,
-                   "partly_cloudy_day":light_orange, "partly_cloudy_night":light_orange}
+                   "partly-cloudy-day":light_orange, "partly-cloudy-night":light_orange}
 
 ## The magic strings needed by the magicblue bulb
 mg_prefix = [0x56]
 mg_suffix = [0x00, 0xf0, 0xaa, 0x3b, 0x07, 0x00, 0x01]
 
 def get_forecast():
-    forecast_datetime = datetime.datetime.now(pytz.timezone(my_tz))
+    ## Note that the forecastio library will be queried with a specific timezone!
+    forecast_datetime = datetime.datetime.now(my_pytz)
     hours, minutes = forecast_time.split(':')
     forecast_datetime = forecast_datetime + datetime.timedelta(days = 1);
     forecast_datetime = forecast_datetime.replace(hour=int(hours), minute=int(minutes))
@@ -64,23 +68,39 @@ def get_forecast():
     weather_string = forecast.currently().icon
     return weather_string
 
-def magicblue_color(colorstring):
+def magicblue_send(colorstring):
     req = GATTRequester(my_magicblue, False)
     req.connect(True, "random")
     time.sleep(1)
+    req.write_by_handle(0x000c, (str(bytearray(code_on))))
+    time.sleep(0.5)
     req.write_by_handle(0x000c, colorstring)
-    time.sleep(1)
+    time.sleep(0.5)
     req.disconnect()
     time.sleep(1)
 
-def get_lightson_time():
+def magicblue_off(colorstring):
+    req = GATTRequester(my_magicblue, False)
+    req.connect(True, "random")
+    time.sleep(1)
+    # Set an 'off' color first, so next time the lamp starts it will not jump colors,
+    # which is ugly.
+    req.write_by_handle(0x000c, colorstring)
+    time.sleep(0.5)
+    req.write_by_handle(0x000c, (str(bytearray(code_off))))
+    time.sleep(0.5)
+    req.disconnect()
+    time.sleep(1)
+
+
+def get_lightson_utctime():
     myLocation = astral.Location(info=("Delft", "NL", my_latt, my_long, my_tz))
     sundown = myLocation.sunset(lightsout_time)
     lightson = sundown + datetime.timedelta(minutes=minutes_before_sundown)
-    return lightson
+    return lightson.astimezone(pytz.utc)
 
 def schedule_magicblue_start():
-    lightson_time = get_lightson_time().strftime("%H:%M")
+    lightson_time = get_lightson_utctime().strftime("%H:%M")
     schedule.every().day.at(lightson_time).do(start_magicblue)
 
 def start_magicblue():
@@ -90,14 +110,15 @@ def start_magicblue():
     colorstring.extend(mg_prefix)
     colorstring.extend(weather_mapping[weather_string])
     colorstring.extend(mg_suffix)
-    magicblue_color(str(bytearray(colorstring)))
+    magicblue_send(str(bytearray(colorstring)))
     return schedule.CancelJob
 
 def stop_magicblue():
     colorstring = []
     colorstring.extend(mg_prefix)
     colorstring.extend(night)
-    magicblue_color(str(bytearray(colorstring)))
+    colorstring.extend(mg_suffix)
+    magicblue_off(str(bytearray(colorstring)))
 
 app = Flask(__name__)
 @app.route('/')
@@ -113,39 +134,51 @@ def queued_jobs():
                 if(func_name == "stop_magicblue"):
                         stop_time = job.next_run
 
+        pretty_date_string = "%A %H:%M"
         sundown = start_time - datetime.timedelta(minutes = minutes_before_sundown)
+        sundown_pretty = pytz.utc.localize(sundown).astimezone(my_pytz).strftime(pretty_date_string)
         forecast = get_forecast()
-        return render_template('index.html', start_time=start_time, stop_time = stop_time, sundown = sundown, forecast = forecast)
+        now = datetime.datetime.now(my_pytz)
+        now_pretty = now.strftime(pretty_date_string)
+        my_pretty_stop = pytz.utc.localize(stop_time).astimezone(my_pytz).strftime(pretty_date_string)
+        my_pretty_start = pytz.utc.localize(start_time).astimezone(my_pytz).strftime(pretty_date_string)
+        return render_template('index.html', start_time=my_pretty_start, stop_time = my_pretty_stop, sundown = sundown_pretty, forecast = forecast, now = now_pretty)
 
 @app.route('/start_now')
 def start_now():
     start_magicblue()
-    return redirect("/")
+    return '{"start_now": "ok"}'
 
 @app.route('/stop_now')
 def stop_now():
     stop_magicblue()
-    return redirect("/")
+    return '{"stop_now": "ok"}'
 
-def throw_webserver():
+def throw_schedule():
     while True:
         schedule.run_pending()
         time.sleep(10)
 
+
+## Init TZ
+my_pytz = pytz.timezone(my_tz)
+
 ## Plan lights out every day at the set time
 lightsout_time_struct = list((time.strptime(lightsout_hour, "%H:%M"))[:7])
-lightsout_time_struct.append(pytz.timezone(my_tz))
 lightsout_time = datetime.datetime(*lightsout_time_struct)
-schedule.every().day.at(lightsout_hour).do(stop_magicblue)
+lightsout_time = my_pytz.localize(lightsout_time)
+## A small problem. I assume the user entered the time in his own timezone.
+## Schedule uses system time, this UTC. Let's fix this.
+schedule.every().day.at(lightsout_time.astimezone(pytz.utc).strftime("%H:%M")).do(stop_magicblue)
 
 ## And plan the job that will figure out when to start the lamp 5 minutes after that
 nextplanning = lightsout_time + datetime.timedelta(minutes=1)
-schedule.every().day.at(nextplanning.strftime("%H:%M")).do(schedule_magicblue_start)
+schedule.every().day.at(nextplanning.astimezone(pytz.utc).strftime("%H:%M")).do(schedule_magicblue_start)
 
 ## Also, look at the current time and situation. If we are in "on" time, force the lamp
 ## ON time is defined as: "right now we're somewhere between sundown and lights out"
-now = datetime.datetime.now(pytz.timezone(my_tz))
-lightson_time = get_lightson_time()
+now = datetime.datetime.now(my_pytz)
+lightson_time = get_lightson_utctime()
 
 if(lightsout_time.time() > now.time() > lightson_time.time()):
     start_magicblue()
@@ -153,11 +186,7 @@ else:
     ## If it's not "ON" time then schedule an ON. After the first run, the lightsout scheduler will take over.
     schedule_magicblue_start()
 
-print(schedule.jobs)
-
-
-
-thread = Thread(target = throw_webserver)
+thread = Thread(target = throw_schedule)
 thread.daemon=True
 thread.start()
 

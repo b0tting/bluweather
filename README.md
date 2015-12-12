@@ -1,5 +1,5 @@
 # bluweather
-A python script for showing weather information using cheap magicblu bluetooth bulbs. Based on Benjamin Piouffle investigation into said "MagicBlue" bulbs. Not finished by far.
+A python script for showing weather information using cheap magicblu bluetooth bulbs. Based on Benjamin Piouffle's investigation into said "MagicBlue" bulbs. Not finished by far.
 
 # The led light bulb
 A lot of these are being sold on Chinese webstores in a couple of different packages. Usually they are advertised as a "4,5 watt E27 Bluetooth led lamp", costing a little over $10. They use a phone app for control named "MagicBlue", the bulb itself advertises it as "LEDBLE" on your low energy bluetooth network.
