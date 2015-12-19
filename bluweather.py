@@ -1,3 +1,5 @@
+#!/usr/bin/python
+
 import schedule
 import time
 import astral
@@ -5,6 +7,7 @@ from gattlib import GATTRequester
 import datetime
 import pytz
 from threading import Thread
+import os
 import forecastio
 from flask import Flask, render_template, redirect, url_for
 
@@ -43,10 +46,13 @@ night = [0x00, 0x00, 0x00]
 code_off = [0xcc, 0x24, 0x33]
 code_on = [0xcc, 0x23, 0x33]
 ## Run the webserver in debug mode?
-debug = True
+debug = False
 
 ## And on what port?
 port = 80
+
+## Pretty screen dates format string
+pretty_date_string = "%A %H:%M"
 
 # A dict for mapping colors to forecast weather types
 ## Expected are clear-day, clear-night, rain, snow, sleet, wind, fog, cloudy, partly-cloudy-day, or partly-cloudy-night
@@ -134,7 +140,6 @@ def queued_jobs():
                 if(func_name == "stop_magicblue"):
                         stop_time = job.next_run
 
-        pretty_date_string = "%A %H:%M"
         sundown = start_time - datetime.timedelta(minutes = minutes_before_sundown)
         sundown_pretty = pytz.utc.localize(sundown).astimezone(my_pytz).strftime(pretty_date_string)
         forecast = get_forecast()
@@ -154,6 +159,13 @@ def stop_now():
     stop_magicblue()
     return '{"stop_now": "ok"}'
 
+## Shut the dajumn thing down
+@app.route('/shutdown')
+def shutdown():
+    print("SHUT DOWN")
+    os.system("/sbin/shutdown -h now")
+    return redirect("/")
+
 def throw_schedule():
     while True:
         schedule.run_pending()
@@ -168,7 +180,7 @@ lightsout_time_struct = list((time.strptime(lightsout_hour, "%H:%M"))[:7])
 lightsout_time = datetime.datetime(*lightsout_time_struct)
 lightsout_time = my_pytz.localize(lightsout_time)
 ## A small problem. I assume the user entered the time in his own timezone.
-## Schedule uses system time, this UTC. Let's fix this.
+## Schedule uses system time, which is in UTC. Let's fix this.
 schedule.every().day.at(lightsout_time.astimezone(pytz.utc).strftime("%H:%M")).do(stop_magicblue)
 
 ## And plan the job that will figure out when to start the lamp 5 minutes after that
