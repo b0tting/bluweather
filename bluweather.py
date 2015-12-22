@@ -3,13 +3,14 @@
 import schedule
 import time
 import astral
-from gattlib import GATTRequester
 import datetime
 import pytz
 from threading import Thread
 import os
 import forecastio
 from flask import Flask, render_template, redirect, url_for
+import logging
+from subprocess import PIPE, Popen, call, STDOUT
 
 # Your geopgraphical coordinates
 my_latt = 52.0066700
@@ -38,18 +39,26 @@ lightsout_hour = "23:00"
 forecast_time = "09:00"
 
 ## Some color arrays
-light_blue = [0x00, 0x99, 0xcc]
-light_gray = [0xaa, 0xaa, 0xaa]
-light_orange = [0xff, 0xcc, 0x00]
-night = [0x00, 0x00, 0x00]
+light_blue = "0099cc"
+light_gray = "aaaaaa"
+light_orange = "ffcc00"
+night = "000000"
 
-code_off = [0xcc, 0x24, 0x33]
-code_on = [0xcc, 0x23, 0x33]
+code_off = "cc2433"
+code_on = "cc2333"
 ## Run the webserver in debug mode?
 debug = False
 
 ## And on what port?
 port = 80
+
+gatttool_location="/usr/bin/gatttool"
+
+## Logging default level. Set to logging.INFO for more detailed info
+logging.basicConfig(level=logging.ERROR)
+
+logger = logging.getLogger("bluweather")
+
 
 ## Pretty screen dates format string
 pretty_date_string = "%A %H:%M"
@@ -61,8 +70,9 @@ weather_mapping = {"clear-day":light_orange,"clear-night":light_orange, "rain":l
                    "partly-cloudy-day":light_orange, "partly-cloudy-night":light_orange}
 
 ## The magic strings needed by the magicblue bulb
-mg_prefix = [0x56]
-mg_suffix = [0x00, 0xf0, 0xaa, 0x3b, 0x07, 0x00, 0x01]
+mg_prefix = "56"
+mg_suffix = "00f0aa3b070001"
+
 
 def get_forecast():
     ## Note that the forecastio library will be queried with a specific timezone!
@@ -74,28 +84,32 @@ def get_forecast():
     weather_string = forecast.currently().icon
     return weather_string
 
-def magicblue_send(colorstring):
-    req = GATTRequester(my_magicblue, False)
-    req.connect(True, "random")
-    time.sleep(1)
-    req.write_by_handle(0x000c, (str(bytearray(code_on))))
-    time.sleep(0.5)
-    req.write_by_handle(0x000c, colorstring)
-    time.sleep(0.5)
-    req.disconnect()
-    time.sleep(1)
 
-def magicblue_off(colorstring):
-    req = GATTRequester(my_magicblue, False)
-    req.connect(True, "random")
-    time.sleep(1)
+def gatttool_call(value):
+    ## Logger abuse!! If we are at a higher error level then just ERROR, use Popen instead of call().
+    ## This will lag the updates, but will actually display errors
+    if(logger.level < logging.ERROR):
+        p = Popen([gatttool_location, "-t", "random", "-b", my_magicblue, "--char-write", "--handle=0x000c", "--value="+value], stdout=PIPE, stderr=PIPE)
+        stdout, stderr = p.communicate()
+        ## The actual error when not finding the BT addres is "connect error: Transport endpoint is not connected (107)"
+        if(stderr.find("107") > -1):
+            logger.error("Could not connect to Magicblue lamp " + my_magicblue + ". Is the power on?")
+    else:
+        call([gatttool_location, "-t", "random", "-b", my_magicblue, "--char-write", "--handle=0x000c", "--value="+value], stderr=STDOUT)
+    time.sleep(0.4)
+
+def magicblue_send(colorstring):
+    gatttool_call(code_on)
+    time.sleep(0.5)
+    gatttool_call(colorstring)
+    time.sleep(0.5)
+
+def magicblue_off():
     # Set an 'off' color first, so next time the lamp starts it will not jump colors,
     # which is ugly.
-    req.write_by_handle(0x000c, colorstring)
+    gatttool_call(mg_prefix + night + mg_suffix)
     time.sleep(0.5)
-    req.write_by_handle(0x000c, (str(bytearray(code_off))))
-    time.sleep(0.5)
-    req.disconnect()
+    gatttool_call(code_off)
     time.sleep(1)
 
 
@@ -112,19 +126,12 @@ def schedule_magicblue_start():
 def start_magicblue():
     ## First, let's toss up a weather forecast. The hard part is creating a good time object
     weather_string = get_forecast()
-    colorstring = []
-    colorstring.extend(mg_prefix)
-    colorstring.extend(weather_mapping[weather_string])
-    colorstring.extend(mg_suffix)
-    magicblue_send(str(bytearray(colorstring)))
+    colorstring = mg_prefix + weather_mapping[weather_string] + mg_suffix
+    magicblue_send(colorstring)
     return schedule.CancelJob
 
 def stop_magicblue():
-    colorstring = []
-    colorstring.extend(mg_prefix)
-    colorstring.extend(night)
-    colorstring.extend(mg_suffix)
-    magicblue_off(str(bytearray(colorstring)))
+    magicblue_off()
 
 app = Flask(__name__)
 @app.route('/')
@@ -139,14 +146,19 @@ def queued_jobs():
                         start_time = job.next_run
                 if(func_name == "stop_magicblue"):
                         stop_time = job.next_run
-
-        sundown = start_time - datetime.timedelta(minutes = minutes_before_sundown)
-        sundown_pretty = pytz.utc.localize(sundown).astimezone(my_pytz).strftime(pretty_date_string)
+	
+	if start_time is None:
+		## This will only happen once: if we started while the lamp should already be on
+		sundown_pretty = False	
+		my_pretty_start = False
+	else: 
+	        sundown = start_time - datetime.timedelta(minutes = minutes_before_sundown)
+	        sundown_pretty = pytz.utc.localize(sundown).astimezone(my_pytz).strftime(pretty_date_string)
+        	my_pretty_start = pytz.utc.localize(start_time).astimezone(my_pytz).strftime(pretty_date_string)
         forecast = get_forecast()
         now = datetime.datetime.now(my_pytz)
         now_pretty = now.strftime(pretty_date_string)
         my_pretty_stop = pytz.utc.localize(stop_time).astimezone(my_pytz).strftime(pretty_date_string)
-        my_pretty_start = pytz.utc.localize(start_time).astimezone(my_pytz).strftime(pretty_date_string)
         return render_template('index.html', start_time=my_pretty_start, stop_time = my_pretty_stop, sundown = sundown_pretty, forecast = forecast, now = now_pretty)
 
 @app.route('/start_now')

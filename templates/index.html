@@ -46,11 +46,11 @@
         </div>
         <div class="row">
             <div class="col-md-3">Sundown</div>
-            <div class="col-md-3">{{sundown}}</div>
+            <div class="col-md-3">{% if sundown %}{{sundown}}{%else%}Sun is down!{%endif%}</div>
         </div>
         <div class="row">
             <div class="col-md-3">Next light on moment</div>
-            <div class="col-md-3">{{start_time}}</div>
+            <div class="col-md-3">{% if start_time %}{{start_time}}{%else%}Light is on!{%endif%}</div>
             <div class="col-md-3"> <button name="start_light" type="button" class="btn-xs btn-danger">Start light</button></div>
         </div>
         <div class="row">
