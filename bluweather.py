@@ -8,7 +8,7 @@ import pytz
 from threading import Thread
 import os
 import forecastio
-from flask import Flask, render_template, redirect, url_for
+from flask import Flask, render_template, redirect, jsonify
 import logging
 from subprocess import PIPE, Popen, call, STDOUT
 
@@ -46,6 +46,9 @@ night = "000000"
 
 code_off = "cc2433"
 code_on = "cc2333"
+## Write this to 0x000c first, then extract state from 0x000f
+code_status= "ef0177"
+
 ## Run the webserver in debug mode?
 debug = False
 
@@ -73,7 +76,6 @@ weather_mapping = {"clear-day":light_orange,"clear-night":light_orange, "rain":l
 mg_prefix = "56"
 mg_suffix = "00f0aa3b070001"
 
-
 def get_forecast():
     ## Note that the forecastio library will be queried with a specific timezone!
     forecast_datetime = datetime.datetime.now(my_pytz)
@@ -98,6 +100,21 @@ def gatttool_call(value):
         call([gatttool_location, "-t", "random", "-b", my_magicblue, "--char-write", "--handle=0x000c", "--value="+value], stderr=STDOUT)
     time.sleep(0.4)
 
+
+## This should be done more elegantly
+## State info found on https://github.com/madhead/saberlight/blob/master/protocols/ZJ-MBL-RGBW%20%28v3%29/protocol.md
+def gatttool_read():
+    ## Logger abuse!! If we are at a higher error level then just ERROR, use Popen instead of call().
+    ## This will lag the updates, but will actually display errors
+
+    p = Popen([gatttool_location, "-t", "random", "-b", my_magicblue, "--char-read", "--handle=0x000f"], stdout=PIPE, stderr=PIPE)
+    stdout, stderr = p.communicate()
+    ## The actual error when not finding the BT addres is "connect error: Transport endpoint is not connected (107)"
+    if(stderr.find("107") > -1):
+        logger.error("Could not connect to Magicblue lamp " + my_magicblue + ". Is the power on?")
+    time.sleep(0.4)
+    return stdout;
+
 def magicblue_send(colorstring):
     gatttool_call(code_on)
     time.sleep(0.5)
@@ -111,6 +128,16 @@ def magicblue_off():
     time.sleep(0.5)
     gatttool_call(code_off)
     time.sleep(1)
+
+def get_magicblue_state():
+    gatttool_call(code_status)
+    time.sleep(0.5)
+    value = gatttool_read()
+    logger.info("Magicblue state: " + value)
+    ## Return value example: "Characteristic value/descriptor: 66 15 23 4a 41 02 ff cc 00 00 07 99 00 00 00 00 00 00 00 00"
+    is_on = "on" if value[39:41] == "23" else "off"
+    color = value[51:59].replace(" ", "")
+    return {"state": is_on, "color":color}
 
 
 def get_lightson_utctime():
@@ -136,40 +163,44 @@ def stop_magicblue():
 app = Flask(__name__)
 @app.route('/')
 def queued_jobs():
-        jobs = schedule.jobs
-        start_time = None
-        stop_time = None
+    jobs = schedule.jobs
+    start_time = None
+    stop_time = None
 
-        for job in jobs:
-                func_name = job.job_func.func.__name__
-                if(func_name == "start_magicblue"):
-                        start_time = job.next_run
-                if(func_name == "stop_magicblue"):
-                        stop_time = job.next_run
-	
-	if start_time is None:
-		## This will only happen once: if we started while the lamp should already be on
-		sundown_pretty = False	
-		my_pretty_start = False
-	else: 
-	        sundown = start_time - datetime.timedelta(minutes = minutes_before_sundown)
-	        sundown_pretty = pytz.utc.localize(sundown).astimezone(my_pytz).strftime(pretty_date_string)
-        	my_pretty_start = pytz.utc.localize(start_time).astimezone(my_pytz).strftime(pretty_date_string)
-        forecast = get_forecast()
-        now = datetime.datetime.now(my_pytz)
-        now_pretty = now.strftime(pretty_date_string)
-        my_pretty_stop = pytz.utc.localize(stop_time).astimezone(my_pytz).strftime(pretty_date_string)
-        return render_template('index.html', start_time=my_pretty_start, stop_time = my_pretty_stop, sundown = sundown_pretty, forecast = forecast, now = now_pretty)
+    for job in jobs:
+        func_name = job.job_func.func.__name__
+        if(func_name == "start_magicblue"):
+            start_time = job.next_run
+        if(func_name == "stop_magicblue"):
+            stop_time = job.next_run
+
+    if start_time is None:
+    ## This will only happen once: if we started while the lamp should already be on
+        sundown_pretty = False
+        my_pretty_start = False
+    else:
+        sundown = start_time - datetime.timedelta(minutes = minutes_before_sundown)
+        sundown_pretty = pytz.utc.localize(sundown).astimezone(my_pytz).strftime(pretty_date_string)
+        my_pretty_start = pytz.utc.localize(start_time).astimezone(my_pytz).strftime(pretty_date_string)
+    forecast = get_forecast()
+    now = datetime.datetime.now(my_pytz)
+    now_pretty = now.strftime(pretty_date_string)
+    my_pretty_stop = pytz.utc.localize(stop_time).astimezone(my_pytz).strftime(pretty_date_string)
+    return render_template('index.html', start_time=my_pretty_start, stop_time = my_pretty_stop, sundown = sundown_pretty, forecast = forecast, now = now_pretty)
 
 @app.route('/start_now')
 def start_now():
     start_magicblue()
-    return '{"start_now": "ok"}'
+    return jsonify(start_now="ok")
 
 @app.route('/stop_now')
 def stop_now():
     stop_magicblue()
-    return '{"stop_now": "ok"}'
+    return jsonify(stop_now="ok")
+
+@app.route("/state")
+def state():
+    return jsonify(get_magicblue_state())
 
 ## Shut the dajumn thing down
 @app.route('/shutdown')
@@ -186,6 +217,9 @@ def throw_schedule():
 
 ## Init TZ
 my_pytz = pytz.timezone(my_tz)
+
+## Sleeping some on system start..
+time.sleep(20)
 
 ## Plan lights out every day at the set time
 lightsout_time_struct = list((time.strptime(lightsout_hour, "%H:%M"))[:7])

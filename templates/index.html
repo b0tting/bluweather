@@ -49,6 +49,11 @@
             <div class="col-md-3">{% if sundown %}{{sundown}}{%else%}Sun is down!{%endif%}</div>
         </div>
         <div class="row">
+            <div class="col-md-3">Lamp state</div>
+            <div class="col-md-3" id="state"></div>
+        </div>
+
+        <div class="row">
             <div class="col-md-3">Next light on moment</div>
             <div class="col-md-3">{% if start_time %}{{start_time}}{%else%}Light is on!{%endif%}</div>
             <div class="col-md-3"> <button name="start_light" type="button" class="btn-xs btn-danger">Start light</button></div>
@@ -71,6 +76,18 @@
         <!-- Include all compiled plugins (below), or include individual files as needed -->
         <script src="/static/js/bootstrap.min.js"></script>
         <script>
+        function refresh_state() {
+            $.getJSON("state", function (data) {
+                if (data.state == "off") {
+                    $("#state").html("Off")
+                } else {
+                    $("#state").html("On <span style='width:100px; background-color:#" + data.color + ";'>&nbsp;</span>")
+                }
+            });
+        }
+
+
+
     $(document).ready(function ($) {
         $('#loading').hide()
         $('button[name=start_light]').click(function () {
@@ -95,6 +112,9 @@
             $('button[name=start_light]').prop('disabled', false);
 
         });
+
+        refresh_state()
+        setInterval(refresh_state, 10000)
     })
 
 
