@@ -39,9 +39,15 @@ lightsout_hour = "23:00"
 forecast_time = "09:00"
 
 ## Some color arrays
-light_blue = "0099cc"
-light_gray = "aaaaaa"
-light_orange = "ffcc00"
+## Please test these first - the blumagic lamp is about as true to color as a box of black crayons
+weather_clear_day = "ffcc00"
+weather_partly_cloudy_day = "eebbaa"
+weather_cloudy = "aaaaaa"
+weather_snow = "cccccc"
+weather_sleet = "669966"
+weather_rain = "0099cc"
+weather_wind = "aaaaaa"
+
 night = "000000"
 
 code_off = "cc2433"
@@ -68,9 +74,16 @@ pretty_date_string = "%A %H:%M"
 
 # A dict for mapping colors to forecast weather types
 ## Expected are clear-day, clear-night, rain, snow, sleet, wind, fog, cloudy, partly-cloudy-day, or partly-cloudy-night
-weather_mapping = {"clear-day":light_orange,"clear-night":light_orange, "rain":light_blue, "snow":light_blue,
-                    "sleet":light_blue, "wind":light_gray, "fog":light_gray, "cloudy":light_gray,
-                   "partly-cloudy-day":light_orange, "partly-cloudy-night":light_orange}
+weather_mapping = {"clear-day":weather_clear_day,
+		"clear-night":weather_clear_day,
+		"rain":weather_rain, 
+		"snow":weather_snow,
+		"sleet":weather_sleet,
+		"wind":weather_wind,
+		"fog":weather_snow, 
+		"cloudy":weather_cloudy,
+		"partly-cloudy-day":weather_partly_cloudy_day, 
+		"partly-cloudy-night":weather_partly_cloudy_day}
 
 ## The magic strings needed by the magicblue bulb
 mg_prefix = "56"
@@ -200,7 +213,9 @@ def stop_now():
 
 @app.route("/state")
 def state():
-    return jsonify(get_magicblue_state())
+    state = {"weather" : get_forecast()}.copy()
+    state.update(get_magicblue_state())
+    return jsonify(state)
 
 ## Shut the dajumn thing down
 @app.route('/shutdown')
