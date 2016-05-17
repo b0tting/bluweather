@@ -55,7 +55,7 @@ code_on = "cc2333"
 ## Write this to 0x000c first, then extract state from 0x000f
 code_status= "ef0177"
 
-## Run the webserver in debug mode? 
+## Run the webserver in debug mode?
 debug = False
 
 ## And on what port?
