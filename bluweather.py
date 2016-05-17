@@ -40,13 +40,13 @@ forecast_time = "09:00"
 
 ## Some color arrays
 ## Please test these first - the blumagic lamp is about as true to color as a box of black crayons
-weather_clear_day = "ffcc00"
-weather_partly_cloudy_day = "eebbaa"
+weather_clear_day = "ffff99"
+weather_partly_cloudy_day = "d5d590"
 weather_cloudy = "aaaaaa"
 weather_snow = "cccccc"
 weather_sleet = "669966"
 weather_rain = "0099cc"
-weather_wind = "aaaaaa"
+weather_wind = "90a7d5"
 
 night = "000000"
 
@@ -55,7 +55,7 @@ code_on = "cc2333"
 ## Write this to 0x000c first, then extract state from 0x000f
 code_status= "ef0177"
 
-## Run the webserver in debug mode?
+## Run the webserver in debug mode? 
 debug = False
 
 ## And on what port?
