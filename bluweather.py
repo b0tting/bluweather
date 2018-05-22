@@ -25,7 +25,7 @@ my_elevation = 1
 my_magicblue = "fb:6f:13:a3:c1:98"
 
 # API key for forecast.io
-forecast_key = ""
+forecast_key = "1bfad3ea61bc652c7e34bf56f759bdfd"
 
 # The amount of time in minutes before or after sundown  at which we should turn on the light. For example, "-60" to
 # kick the lamp into life an hour before dusk. No quotes please.
@@ -40,14 +40,14 @@ forecast_time = "09:00"
 
 ## Some color arrays
 ## Please test these first - the blumagic lamp is about as true to color as a box of black crayons
-weather_clear_day = "ffff99"
+weather_clear_day = "ffff10"
 weather_partly_cloudy_day = "d5d590"
 weather_cloudy = "aaaaaa"
 weather_snow = "cccccc"
 weather_sleet = "669966"
 weather_rain = "0099cc"
 weather_wind = "90a7d5"
-
+ 
 night = "000000"
 
 code_off = "cc2433"
@@ -56,7 +56,7 @@ code_on = "cc2333"
 code_status= "ef0177"
 
 ## Run the webserver in debug mode?
-debug = False
+debug = True
 
 ## And on what port?
 port = 80
@@ -104,13 +104,13 @@ def gatttool_call(value):
     ## Logger abuse!! If we are at a higher error level then just ERROR, use Popen instead of call().
     ## This will lag the updates, but will actually display errors
     if(logger.level < logging.ERROR):
-        p = Popen([gatttool_location, "-t", "random", "-b", my_magicblue, "--char-write", "--handle=0x000c", "--value="+value], stdout=PIPE, stderr=PIPE)
+        p = Popen([gatttool_location, "-t", "random", "-b", my_magicblue, "--char-write-req", "--handle=0x000c", "--value="+value], stdout=PIPE, stderr=PIPE)
         stdout, stderr = p.communicate()
         ## The actual error when not finding the BT addres is "connect error: Transport endpoint is not connected (107)"
         if(stderr.find("107") > -1):
             logger.error("Could not connect to Magicblue lamp " + my_magicblue + ". Is the power on?")
     else:
-        call([gatttool_location, "-t", "random", "-b", my_magicblue, "--char-write", "--handle=0x000c", "--value="+value], stderr=STDOUT)
+        call([gatttool_location, "-t", "random", "-b", my_magicblue, "--char-write-req", "--handle=0x000c", "--value="+value], stderr=STDOUT)
     time.sleep(0.4)
 
 
@@ -234,7 +234,7 @@ def throw_schedule():
 my_pytz = pytz.timezone(my_tz)
 
 ## Sleeping some on system start..
-time.sleep(20)
+##time.sleep(20)
 
 ## Plan lights out every day at the set time
 lightsout_time_struct = list((time.strptime(lightsout_hour, "%H:%M"))[:7])
@@ -252,7 +252,6 @@ schedule.every().day.at(nextplanning.astimezone(pytz.utc).strftime("%H:%M")).do(
 ## ON time is defined as: "right now we're somewhere between sundown and lights out"
 now = datetime.datetime.now(my_pytz)
 lightson_time = get_lightson_utctime()
-
 if(lightsout_time.time() > now.time() > lightson_time.time()):
     start_magicblue()
 else:
@@ -263,5 +262,5 @@ thread = Thread(target = throw_schedule)
 thread.daemon=True
 thread.start()
 
-app.debug = debug
+app.debug = False
 app.run(host='0.0.0.0', port=port)
